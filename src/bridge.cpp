@@ -23,6 +23,13 @@
 //           Once in Wire structs the data is safe to memcpy into the
 //           DDS octet sequence without any hidden padding gaps.
 //
+//  Step 4 | pack_into_dds()
+//           memcpy the Wire structs sequentially into the DDS_OctetSeq
+//           buffer inside the DataPackageStruct. Also fills the descriptor
+//           fields on the struct so subscribers can read metadata without
+//           touching the octet blob. At this point the struct is ready
+//           to hand to a DDS DataWriter.
+//
 // ═════════════════════════════════════════════════════════════════════════════
 
 
@@ -157,6 +164,70 @@ void transfer_to_wire(const Preamble&  api_pre,
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  STEP 4 — Pack Wire structs into the DDS DataPackageStruct
+//
+//  Now that data is in our pragma-packed Wire structs we can safely
+//  memcpy them into the DDS_OctetSeq buffer. The layout in the buffer is:
+//
+//    [ WirePreamble | WireHeader | WirePayload[0] | WirePayload[1] ... ]
+//
+//  We also fill the descriptor fields directly on the DataPackageStruct
+//  so subscribers can read routing/sizing info without decoding the blob.
+// ─────────────────────────────────────────────────────────────────────────────
+bool pack_into_dds(const WirePreamble&         wire_pre,
+                   const WireHeader&            wire_header,
+                   const WirePayload*           wire_payloads,
+                   DataBus::DataPackageStruct&  dds_pkg)
+{
+    // --- 1. Fill descriptor fields directly on the DDS struct ---
+    //        Subscribers can read these without touching the octet blob
+    dds_pkg.source_id           = wire_header.routing.source_id;
+    dds_pkg.dest_id             = wire_header.routing.dest_id;
+    dds_pkg.sequence_num        = wire_header.routing.sequence_num;
+    dds_pkg.message_type        = wire_header.routing.message_type;
+    dds_pkg.header_size         = wire_pre.header_size;
+    dds_pkg.payload_record_size = wire_pre.payload_size;
+    dds_pkg.payload_count       = wire_pre.payload_count;
+    dds_pkg.message_length      = wire_pre.message_length;
+
+    // --- 2. Allocate the octet buffer to fit the full wire message ---
+    const uint32_t total_bytes = wire_pre.message_length;
+    if (!dds_pkg.payload.ensure_length(total_bytes, total_bytes)) {
+        printf("ERROR: failed to allocate octet buffer (%u bytes)\n", total_bytes);
+        return false;
+    }
+
+    // --- 3. Get a raw pointer to the start of the buffer ---
+    uint8_t*  buf    = dds_pkg.payload.get_contiguous_buffer();
+    uint32_t  offset = 0;
+
+    // --- 4. memcpy each Wire struct in sequentially ---
+
+    // Preamble
+    memcpy(buf + offset, &wire_pre, sizeof(WirePreamble));
+    offset += sizeof(WirePreamble);
+
+    // Header
+    memcpy(buf + offset, &wire_header, sizeof(WireHeader));
+    offset += sizeof(WireHeader);
+
+    // Payloads — only the populated count, not MAX_PAYLOAD_COUNT
+    memcpy(buf + offset, wire_payloads,
+           wire_pre.payload_count * sizeof(WirePayload));
+    offset += wire_pre.payload_count * sizeof(WirePayload);
+
+    // --- 5. Sanity check ---
+    if (offset != total_bytes) {
+        printf("ERROR: offset mismatch — wrote %u bytes, expected %u\n",
+               offset, total_bytes);
+        return false;
+    }
+
+    return true;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  main — drives the full flow
 // ─────────────────────────────────────────────────────────────────────────────
 int main()
@@ -166,7 +237,7 @@ int main()
     // ── STEP 1: API gives us a filled Header and Payload array ───────────────
 
     Header  api_header;
-    Payload api_payloads[MAX_PAYLOAD_COUNT] = {};  // zero-init unused slots
+    Payload api_payloads[MAX_PAYLOAD_COUNT] = {};
 
     simulate_api_fill(api_header, api_payloads, PAYLOAD_COUNT);
 
@@ -208,8 +279,26 @@ int main()
     printf("  wire_header.routing.source_id : 0x%04X\n", wire_header.routing.source_id);
     printf("  wire_payloads[0].tag          : 0x%04X\n", wire_payloads[0].tag);
 
-    // ── At this point wire_pre, wire_header, wire_payloads are ready ─────────
-    //    Next step: memcpy them into the DDS_OctetSeq buffer
+    // ── STEP 4: Pack Wire structs into the DDS DataPackageStruct ─────────────
+
+    DataBus::DataPackageStruct dds_pkg;
+
+    if (!pack_into_dds(wire_pre, wire_header, wire_payloads, dds_pkg)) {
+        return 1;
+    }
+
+    printf("\n=== STEP 4: Packed into DDS DataPackageStruct ===\n");
+    printf("  dds_pkg.source_id           : 0x%04X\n",  dds_pkg.source_id);
+    printf("  dds_pkg.dest_id             : 0x%04X\n",  dds_pkg.dest_id);
+    printf("  dds_pkg.sequence_num        : %u\n",       dds_pkg.sequence_num);
+    printf("  dds_pkg.message_type        : 0x%02X\n",  dds_pkg.message_type);
+    printf("  dds_pkg.header_size         : %u bytes\n", dds_pkg.header_size);
+    printf("  dds_pkg.payload_record_size : %u bytes\n", dds_pkg.payload_record_size);
+    printf("  dds_pkg.payload_count       : %u\n",       dds_pkg.payload_count);
+    printf("  dds_pkg.message_length      : %u bytes\n", dds_pkg.message_length);
+    printf("  octet buffer length         : %u bytes\n", dds_pkg.payload.length());
+    printf("\n  Ready to publish via DDS DataWriter.\n");
+    printf("  e.g. DataPackageStructDataWriter->write(dds_pkg, DDS_HANDLE_NIL);\n");
 
     return 0;
 }
