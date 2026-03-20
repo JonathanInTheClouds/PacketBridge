@@ -14,6 +14,8 @@
 
 #include <cstdint>
 
+namespace PktBridge {
+
 #pragma pack(push, 1)
 
 // ─────────────────────────────────────────────
@@ -75,3 +77,5 @@ struct WirePayload {
 };
 
 #pragma pack(pop)
+
+}  // namespace PktBridge
