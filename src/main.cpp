@@ -1,17 +1,10 @@
 #include "../include/PacketBridge.h"
 #include <cstdio>
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  main
-//
-//  Simulates how the larger system would use PacketBridge.
-//  The DataPackageStruct lives outside — created by the caller,
-//  passed into process() to be filled, then handed to the DataWriter.
-// ─────────────────────────────────────────────────────────────────────────────
 int main()
 {
     // --- Create and initialize the bridge ---
-    PacketBridge bridge;
+    PktBridge::PacketBridge bridge;
     if (!bridge.init()) {
         return 1;
     }
@@ -20,7 +13,7 @@ int main()
     //     The larger system owns it and passes it in
     DataBus::DataPackageStruct dds_pkg;
 
-    // --- Run the pipeline --- 
+    // --- Run the pipeline ---
     if (!bridge.process(dds_pkg)) {
         return 1;
     }

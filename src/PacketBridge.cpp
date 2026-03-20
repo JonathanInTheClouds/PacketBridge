@@ -2,6 +2,11 @@
 #include <cstring>
 #include <cstdio>
 
+namespace PktBridge {
+
+
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Constructor
 // ─────────────────────────────────────────────────────────────────────────────
@@ -285,3 +290,5 @@ bool PacketBridge::packIntoDds(DataBus::DataPackageStruct& dds_pkg)
 
     return true;
 }
+
+}  // namespace PktBridge

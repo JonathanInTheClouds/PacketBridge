@@ -18,6 +18,8 @@
 #include "../include/wire_packet.h"
 #include "../dds/DataPackageStruct.h"
 
+namespace PktBridge {
+
 // ─────────────────────────────────────────────
 //  Simulated API context types
 //  In real life these come from the API headers
@@ -81,3 +83,5 @@ private:
                                const Payload*  api_payloads);
     bool        packIntoDds(DataBus::DataPackageStruct& dds_pkg);
 };
+
+}  // namespace PktBridge
